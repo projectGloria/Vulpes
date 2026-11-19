@@ -92,14 +92,14 @@ export async function runLoopbackOAuthFlow(
 
           if (returnedError) {
             res.writeHead(400, { 'Content-Type': 'text/html; charset=utf-8' });
-            res.end('<h2>GitLab Desktop Sign-In Cancelled</h2><p>You may close this tab.</p>');
+            res.end('<h2>Vulpes Sign-In Cancelled</h2><p>You may close this tab.</p>');
             finish(new Error(`OAuth authorization failed: ${returnedError}`));
             return;
           }
 
           if (!codeParam || returnedState !== state) {
             res.writeHead(400, { 'Content-Type': 'text/html; charset=utf-8' });
-            res.end('<h2>Invalid OAuth State</h2><p>Please retry sign-in from GitLab Desktop.</p>');
+            res.end('<h2>Invalid OAuth State</h2><p>Please retry sign-in from Vulpes.</p>');
             finish(new Error('OAuth state mismatch. Possible CSRF or stale callback.'));
             return;
           }
@@ -111,8 +111,8 @@ export async function runLoopbackOAuthFlow(
           res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' });
           res.end(
             '<!doctype html><html><body style="font-family:sans-serif;padding:40px;text-align:center">' +
-              '<h2>Signed in to GitLab Desktop</h2>' +
-              '<p>Authentication succeeded. You can close this browser tab and return to GitLab Desktop.</p>' +
+              '<h2>Signed in to Vulpes</h2>' +
+              '<p>Authentication succeeded. You can close this browser tab and return to Vulpes.</p>' +
               '</body></html>'
           );
 

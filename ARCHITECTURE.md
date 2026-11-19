@@ -1,6 +1,6 @@
-# GitLab Desktop Architecture
+# Vulpes Architecture
 
-GitLab Desktop is a cross-platform Electron desktop client for GitLab built with TypeScript (strict mode), React, Vite (`electron-vite`), and Zustand.
+Vulpes is a cross-platform Electron desktop client for GitLab built with TypeScript (strict mode), React, Vite (`electron-vite`), and Zustand.
 
 ## Process Architecture
 

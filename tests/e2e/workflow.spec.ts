@@ -7,7 +7,7 @@ import { _electron as electron, expect, test } from '@playwright/test';
 
 /**
  * End-to-end Electron flow:
- * 1. Launches built GitLab Desktop with an isolated userData directory
+ * 1. Launches built Vulpes with an isolated userData directory
  * 2. Signs in against a local mock GitLab v4 API server using a PAT
  * 3. Clones a local bare Git repository via the Clone dialog
  * 4. Modifies a file, stages & commits via the Changes view
@@ -83,7 +83,7 @@ test('clone -> change -> commit -> push -> create MR workflow', async () => {
 
   try {
     const page = await app.firstWindow();
-    await expect(page.getByText('Welcome to GitLab Desktop')).toBeVisible();
+    await expect(page.getByText('Welcome to Vulpes')).toBeVisible();
 
     // 1. Sign in with PAT against mock GitLab server
     await page.getByRole('button', { name: /Sign in/i }).click();

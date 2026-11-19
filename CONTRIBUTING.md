@@ -1,6 +1,6 @@
-# Contributing to GitLab Desktop
+# Contributing to Vulpes
 
-Thank you for your interest in contributing to GitLab Desktop!
+Thank you for your interest in contributing to Vulpes!
 
 ## Development Workflow
 
