@@ -1,9 +1,10 @@
 {
-  "name": "gitlab-desktop",
-  "version": "0.1.0",
-  "description": "A simple, opinionated cross-platform desktop Git client for GitLab",
+  "name": "vulpes",
+  "productName": "Vulpes",
+  "version": "1.0.0",
+  "description": "Vulpes — fast, focused cross-platform desktop Git & GitLab client",
   "main": "./out/main/index.js",
-  "author": "GitLab Desktop Contributors",
+  "author": "Vulpes Contributors",
   "license": "MIT",
   "scripts": {
     "dev": "electron-vite dev",

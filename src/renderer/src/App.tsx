@@ -4,6 +4,7 @@ import { Toolbar } from './components/layout/Toolbar';
 import { Sidebar } from './components/layout/Sidebar';
 import { MainContent } from './components/layout/MainContent';
 import { GitMissingBanner } from './components/common/GitMissingBanner';
+import { GitProgressBar } from './components/common/GitProgressBar';
 import { AddRepoDialog } from './components/dialogs/AddRepoDialog';
 import { CreateRepoDialog } from './components/dialogs/CreateRepoDialog';
 import { CloneRepoDialog } from './components/dialogs/CloneRepoDialog';
@@ -18,22 +19,28 @@ import { useGlobalShortcuts } from './hooks/useGlobalShortcuts';
 export function App(): React.JSX.Element {
   const initialize = useAppStore((s) => s.initialize);
   const refreshStatus = useAppStore((s) => s.refreshStatus);
+  const setGitProgress = useAppStore((s) => s.setGitProgress);
 
   useGlobalShortcuts();
 
   useEffect(() => {
     void initialize();
-    const unsubscribe = window.gitlabDesktop.on('repo:changed', () => {
-      void refreshStatus();
+    const unsubChanged = window.gitlabDesktop.on('repo:changed', () => {
+      void refreshStatus(true);
+    });
+    const unsubProgress = window.gitlabDesktop.on('git:progress', (evt) => {
+      setGitProgress(evt);
     });
     return () => {
-      unsubscribe();
+      unsubChanged();
+      unsubProgress();
     };
-  }, [initialize, refreshStatus]);
+  }, [initialize, refreshStatus, setGitProgress]);
 
   return (
     <div className="app-shell">
       <Toolbar />
+      <GitProgressBar />
       <GitMissingBanner />
       <div className="workspace-body">
         <Sidebar />

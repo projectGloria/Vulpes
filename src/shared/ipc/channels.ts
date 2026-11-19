@@ -6,6 +6,7 @@ import type {
   DiscardBackupRecord,
   FileDiff,
   GitInstallStatus,
+  GitProgressEvent,
   RepoSettings,
   RepoStatus,
   RepositoryRecord,
@@ -63,6 +64,22 @@ export interface IpcChannelMap {
     req: Partial<AppPreferences>;
     res: AppPreferences;
   };
+  'window:minimize': {
+    req: void;
+    res: void;
+  };
+  'window:maximizeToggle': {
+    req: void;
+    res: { maximized: boolean };
+  };
+  'window:close': {
+    req: void;
+    res: void;
+  };
+  'window:isMaximized': {
+    req: void;
+    res: { maximized: boolean };
+  };
   'git:checkInstall': {
     req: void;
     res: GitInstallStatus;
@@ -111,6 +128,14 @@ export interface IpcChannelMap {
     req: { accountId: string };
     res: { valid: boolean; username?: string; error?: string };
   };
+  'auth:refreshProfile': {
+    req: { accountId: string };
+    res: GitLabAccount;
+  };
+  'gitlab:fetchAvatar': {
+    req: { url: string; accountId?: string };
+    res: { dataUrl: string | null };
+  };
   'gitlab:listProjects': {
     req: { accountId: string; search?: string; page?: number };
     res: GitLabProject[];
@@ -124,6 +149,7 @@ export interface IpcChannelMap {
       gitlabProjectId?: number;
       gitlabProjectPath?: string;
       gitlabInstanceUrl?: string;
+      avatarUrl?: string | null;
     };
     res: RepositoryRecord;
   };
@@ -289,6 +315,8 @@ export type IpcChannel = keyof IpcChannelMap;
 export interface IpcEventMap {
   'repo:changed': { repoPath: string };
   'repo:cloneProgress': CloneProgressEvent;
+  'git:progress': GitProgressEvent;
+  'window:maximizedChanged': { maximized: boolean };
 }
 
 export type IpcEventChannel = keyof IpcEventMap;

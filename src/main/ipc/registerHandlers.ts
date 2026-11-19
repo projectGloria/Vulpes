@@ -18,6 +18,7 @@ import {
   createRepoSchema,
   deleteBranchSchema,
   discardFileSchema,
+  fetchAvatarSchema,
   fileDiffSchema,
   jobIdSchema,
   listIssuesSchema,
@@ -50,8 +51,8 @@ import {
   updatePreferencesSchema
 } from '@shared/ipc/schemas';
 import { parseGitRemoteUrl } from '@shared/utils/url';
-import type { RepositoryRecord } from '@shared/types/git';
-import type { GitLabAccount } from '@shared/types/gitlab';
+import type { GitProgressEvent, RepositoryRecord } from '@shared/types/git';
+import type { GitLabAccount, GitLabUser } from '@shared/types/gitlab';
 import type { GitService } from '../services/git/GitService';
 import type { AppStore } from '../services/storage/AppStore';
 import type { Logger } from '../services/logging/logger';
@@ -116,10 +117,40 @@ export function registerIpcHandlers(ctx: MainContext): void {
     });
   };
 
+  const emitGitProgress = (evt: GitProgressEvent): void => {
+    const win = getMainWindow();
+    if (win && !win.isDestroyed()) {
+      win.webContents.send('git:progress', evt);
+    }
+  };
+
   handle('app:getVersion', null, logger, () => ({
     version: app.getVersion(),
     platform: process.platform,
     logPath: logger.getLogFilePath()
+  }));
+
+  handle('window:minimize', null, logger, () => {
+    getMainWindow()?.minimize();
+  });
+
+  handle('window:maximizeToggle', null, logger, () => {
+    const win = getMainWindow();
+    if (!win) return { maximized: false };
+    if (win.isMaximized()) {
+      win.unmaximize();
+      return { maximized: false };
+    }
+    win.maximize();
+    return { maximized: true };
+  });
+
+  handle('window:close', null, logger, () => {
+    getMainWindow()?.close();
+  });
+
+  handle('window:isMaximized', null, logger, () => ({
+    maximized: getMainWindow()?.isMaximized() ?? false
   }));
 
   handle('app:openExternal', openExternalSchema, logger, async ({ url }) => {
@@ -285,11 +316,36 @@ export function registerIpcHandlers(ctx: MainContext): void {
     const account = appStore.getAccountById(accountId);
     if (!account) return { valid: false, error: 'Account not found' };
     try {
-      const user = await gitlabClient.request<{ username: string }>(account, '/user');
+      const user = await gitlabClient.request<GitLabUser>(account, '/user');
+      appStore.updateAccountProfile(accountId, {
+        name: user.name,
+        username: user.username,
+        email: user.email ?? null,
+        avatarUrl: user.avatar_url ?? null
+      });
       return { valid: true, username: user.username };
     } catch (err) {
       return { valid: false, error: err instanceof Error ? err.message : 'Verification failed' };
     }
+  });
+
+  handle('auth:refreshProfile', accountIdSchema, logger, async ({ accountId }) => {
+    const account = appStore.getAccountById(accountId);
+    if (!account) throw new Error('Account not found');
+    const user = await gitlabClient.request<GitLabUser>(account, '/user');
+    const updated = appStore.updateAccountProfile(accountId, {
+      name: user.name,
+      username: user.username,
+      email: user.email ?? null,
+      avatarUrl: user.avatar_url ?? null
+    });
+    return updated ?? account;
+  });
+
+  handle('gitlab:fetchAvatar', fetchAvatarSchema, logger, async ({ url, accountId }) => {
+    const account = accountId ? appStore.getAccountById(accountId) : undefined;
+    const dataUrl = await gitlabClient.fetchImageAsDataUrl(url, account);
+    return { dataUrl };
   });
 
   // --- Phase 3: Clone & repository management ---
@@ -329,7 +385,8 @@ export function registerIpcHandlers(ctx: MainContext): void {
         accountId: payload.accountId,
         gitlabInstanceUrl: payload.gitlabInstanceUrl ?? parsed?.baseUrl,
         gitlabProjectId: payload.gitlabProjectId,
-        gitlabProjectPath: payload.gitlabProjectPath ?? parsed?.projectPath
+        gitlabProjectPath: payload.gitlabProjectPath ?? parsed?.projectPath,
+        avatarUrl: payload.avatarUrl ?? null
       });
       watchActiveRepo();
       logger.info('repo', 'Cloned repository', { path: clonedPath });
@@ -375,11 +432,13 @@ export function registerIpcHandlers(ctx: MainContext): void {
 
     try {
       const project = await gitlabClient.getProjectByPath(account, parsed.projectPath);
+      const avatarUrl = project.avatar_url ?? project.namespace?.avatar_url ?? null;
       return appStore.updateRepositoryMetadata(repo.id, {
         accountId: account.id,
         gitlabInstanceUrl: account.instanceUrl,
         gitlabProjectId: project.id,
-        gitlabProjectPath: project.path_with_namespace
+        gitlabProjectPath: project.path_with_namespace,
+        avatarUrl
       });
     } catch {
       return appStore.updateRepositoryMetadata(repo.id, {
@@ -417,9 +476,35 @@ export function registerIpcHandlers(ctx: MainContext): void {
     gitService.discardFile(repoPath, filePath, untracked)
   );
 
-  handle('git:commit', commitSchema, logger, ({ repoPath, summary, description, coAuthors, amend }) =>
-    gitService.commit(repoPath, { summary, description, coAuthors, amend })
-  );
+  handle('git:commit', commitSchema, logger, async ({ repoPath, summary, description, coAuthors, amend }) => {
+    emitGitProgress({
+      operation: 'commit',
+      repoPath,
+      stage: amend ? 'Amending commit...' : 'Creating commit...',
+      percent: null,
+      status: 'running'
+    });
+    try {
+      await gitService.commit(repoPath, { summary, description, coAuthors, amend });
+      emitGitProgress({
+        operation: 'commit',
+        repoPath,
+        stage: amend ? 'Commit amended' : 'Commit created',
+        percent: 100,
+        status: 'done'
+      });
+    } catch (err) {
+      emitGitProgress({
+        operation: 'commit',
+        repoPath,
+        stage: 'Commit failed',
+        percent: null,
+        status: 'error',
+        message: err instanceof Error ? err.message : 'Commit failed'
+      });
+      throw err;
+    }
+  });
 
   handle('git:undoLastCommit', repoStatusSchema, logger, ({ repoPath }) =>
     gitService.undoLastCommit(repoPath)
@@ -461,15 +546,133 @@ export function registerIpcHandlers(ctx: MainContext): void {
     gitService.stashDrop(repoPath, ref)
   );
 
-  handle('git:fetch', repoStatusSchema, logger, ({ repoPath }) => gitService.fetch(repoPath));
+  handle('git:fetch', repoStatusSchema, logger, async ({ repoPath }) => {
+    emitGitProgress({
+      operation: 'fetch',
+      repoPath,
+      stage: 'Fetching from remote...',
+      percent: null,
+      status: 'running'
+    });
+    try {
+      await gitService.fetch(repoPath, undefined, (progress) => {
+        emitGitProgress({
+          operation: 'fetch',
+          repoPath,
+          stage: progress.stage || 'Fetching...',
+          percent: progress.percent,
+          status: 'running',
+          message: progress.raw
+        });
+      });
+      emitGitProgress({
+        operation: 'fetch',
+        repoPath,
+        stage: 'Fetch complete',
+        percent: 100,
+        status: 'done'
+      });
+    } catch (err) {
+      emitGitProgress({
+        operation: 'fetch',
+        repoPath,
+        stage: 'Fetch failed',
+        percent: null,
+        status: 'error',
+        message: err instanceof Error ? err.message : 'Fetch failed'
+      });
+      throw err;
+    }
+  });
 
-  handle('git:pull', pullSchema, logger, ({ repoPath, strategy }) =>
-    gitService.pull(repoPath, strategy ?? appStore.getPreferences().pullStrategy)
-  );
+  handle('git:pull', pullSchema, logger, async ({ repoPath, strategy }) => {
+    emitGitProgress({
+      operation: 'pull',
+      repoPath,
+      stage: 'Pulling from remote...',
+      percent: null,
+      status: 'running'
+    });
+    try {
+      await gitService.pull(
+        repoPath,
+        strategy ?? appStore.getPreferences().pullStrategy,
+        undefined,
+        (progress) => {
+          emitGitProgress({
+            operation: 'pull',
+            repoPath,
+            stage: progress.stage || 'Pulling...',
+            percent: progress.percent,
+            status: 'running',
+            message: progress.raw
+          });
+        }
+      );
+      emitGitProgress({
+        operation: 'pull',
+        repoPath,
+        stage: 'Pull complete',
+        percent: 100,
+        status: 'done'
+      });
+    } catch (err) {
+      emitGitProgress({
+        operation: 'pull',
+        repoPath,
+        stage: 'Pull failed',
+        percent: null,
+        status: 'error',
+        message: err instanceof Error ? err.message : 'Pull failed'
+      });
+      throw err;
+    }
+  });
 
-  handle('git:push', pushSchema, logger, ({ repoPath, publish, branch }) =>
-    gitService.push(repoPath, { publish, branch })
-  );
+  handle('git:push', pushSchema, logger, async ({ repoPath, publish, branch }) => {
+    emitGitProgress({
+      operation: 'push',
+      repoPath,
+      stage: publish ? `Publishing ${branch ?? 'branch'}...` : 'Pushing to remote...',
+      percent: null,
+      status: 'running'
+    });
+    try {
+      const result = await gitService.push(
+        repoPath,
+        { publish, branch },
+        undefined,
+        (progress) => {
+          emitGitProgress({
+            operation: 'push',
+            repoPath,
+            stage: progress.stage || 'Pushing...',
+            percent: progress.percent,
+            status: 'running',
+            message: progress.raw
+          });
+        }
+      );
+      emitGitProgress({
+        operation: 'push',
+        repoPath,
+        stage: publish ? 'Branch published' : 'Push complete',
+        percent: 100,
+        status: 'done'
+      });
+      return result;
+    } catch (err) {
+      emitGitProgress({
+        operation: 'push',
+        repoPath,
+        stage: 'Push failed',
+        percent: null,
+        status: 'error',
+        message: err instanceof Error ? err.message : 'Push failed'
+      });
+      throw err;
+    }
+  });
 
   handle('git:getLog', logSchema, logger, ({ repoPath, search, limit }) =>
     gitService.getLog(repoPath, { search, limit })

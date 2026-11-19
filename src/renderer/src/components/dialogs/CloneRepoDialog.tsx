@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { Download, Globe, Link2, Search, X } from 'lucide-react';
 import type { CloneProgressEvent } from '@shared/types/git';
 import type { GitLabProject } from '@shared/types/gitlab';
+import { Avatar } from '@renderer/components/common/Avatar';
 import { useAppStore } from '@renderer/store/useAppStore';
 
 export function CloneRepoDialog(): React.JSX.Element | null {
@@ -130,7 +131,11 @@ export function CloneRepoDialog(): React.JSX.Element | null {
       accountId: tab === 'gitlab' ? selectedAccountId : undefined,
       gitlabProjectId: tab === 'gitlab' ? selectedProject?.id : undefined,
       gitlabProjectPath: tab === 'gitlab' ? selectedProject?.path_with_namespace : undefined,
-      gitlabInstanceUrl: tab === 'gitlab' ? account?.instanceUrl : undefined
+      gitlabInstanceUrl: tab === 'gitlab' ? account?.instanceUrl : undefined,
+      avatarUrl:
+        tab === 'gitlab'
+          ? (selectedProject?.avatar_url ?? selectedProject?.namespace?.avatar_url ?? null)
+          : undefined
     });
 
     setCloning(false);
@@ -236,31 +241,21 @@ export function CloneRepoDialog(): React.JSX.Element | null {
                         key={p.id}
                         type="button"
                         onClick={() => setSelectedProject(p)}
-                        style={{
-                          display: 'block',
-                          width: '100%',
-                          textAlign: 'left',
-                          padding: '8px 10px',
-                          border: 'none',
-                          borderBottom: '1px solid var(--border-subtle)',
-                          background: active ? 'var(--bg-selected)' : 'transparent',
-                          cursor: 'pointer'
-                        }}
+                        className={`clone-project-row${active ? ' active' : ''}`}
                       >
-                        <div style={{ fontWeight: 600 }}>{p.path_with_namespace}</div>
-                        {p.description && (
-                          <div
-                            style={{
-                              fontSize: 11,
-                              color: 'var(--text-muted)',
-                              whiteSpace: 'nowrap',
-                              overflow: 'hidden',
-                              textOverflow: 'ellipsis'
-                            }}
-                          >
-                            {p.description}
-                          </div>
-                        )}
+                        <Avatar
+                          src={p.avatar_url ?? p.namespace?.avatar_url}
+                          accountId={selectedAccountId}
+                          name={p.name}
+                          size={28}
+                          shape="rounded"
+                        />
+                        <div className="clone-project-info">
+                          <div style={{ fontWeight: 600 }}>{p.path_with_namespace}</div>
+                          {p.description && (
+                            <div className="clone-project-desc">{p.description}</div>
+                          )}
+                        </div>
                       </button>
                     );
                   })

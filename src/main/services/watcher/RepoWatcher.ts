@@ -21,7 +21,7 @@ export class RepoWatcher {
         if (this.currentPath === normalized) {
           onChange(normalized);
         }
-      }, 250);
+      }, 350);
     };
 
     this.watcher = chokidar.watch(normalized, {
@@ -32,7 +32,17 @@ export class RepoWatcher {
         const rel = path.relative(normalized, filePath).replace(/\\/g, '/');
         if (!rel) return false;
         if (rel === 'node_modules' || rel.startsWith('node_modules/')) return true;
-        if (rel.startsWith('.git/objects') || rel.startsWith('.git/logs')) return true;
+        if (
+          rel.startsWith('.git/objects') ||
+          rel.startsWith('.git/logs') ||
+          rel === '.git/index.lock' ||
+          rel === '.git/FETCH_HEAD' ||
+          rel === '.git/ORIG_HEAD' ||
+          rel === '.git/COMMIT_EDITMSG' ||
+          (rel.startsWith('.git/') && (rel.endsWith('.lock') || rel.endsWith('.tmp')))
+        ) {
+          return true;
+        }
         return false;
       }
     });

@@ -47,6 +47,7 @@ export class GitLabClient {
   private readonly deps: GitLabClientDeps;
   private readonly fetchFn: typeof fetch;
   private readonly cache = new ResponseCache();
+  private readonly avatarCache = new Map<string, string | null>();
   private readonly refreshInFlight = new Map<string, Promise<StoredTokenPayload>>();
 
   constructor(deps: GitLabClientDeps) {
@@ -426,5 +427,83 @@ export class GitLabClient {
       cacheTtlMs: 60_000,
       cacheTags: [`project:${projectId}`]
     });
+  }
+
+  /**
+   * Fetches a user or project avatar image in the main process and returns a data URL.
+   * Sends GitLab authentication headers only when the target origin matches the account's instance.
+   */
+  public async fetchImageAsDataUrl(
+    rawUrl: string,
+    account?: GitLabAccount
+  ): Promise<string | null> {
+    let resolvedUrl = rawUrl.trim();
+    if (!resolvedUrl) return null;
+
+    if (resolvedUrl.startsWith('/') && account?.instanceUrl) {
+      resolvedUrl = `${account.instanceUrl.replace(/\/+$/, '')}${resolvedUrl}`;
+    }
+
+    let parsedUrl: URL;
+    try {
+      parsedUrl = new URL(resolvedUrl);
+      if (parsedUrl.protocol !== 'https:' && parsedUrl.protocol !== 'http:') {
+        return null;
+      }
+    } catch {
+      return null;
+    }
+
+    const cacheKey = `${account?.id ?? 'anon'}:${parsedUrl.toString()}`;
+    if (this.avatarCache.has(cacheKey)) {
+      return this.avatarCache.get(cacheKey) ?? null;
+    }
+
+    try {
+      const headers: Record<string, string> = {
+        Accept: 'image/*'
+      };
+
+      if (account) {
+        try {
+          const instanceOrigin = new URL(account.instanceUrl).origin;
+          if (parsedUrl.origin === instanceOrigin) {
+            const token = await this.getValidToken(account);
+            if (account.authMethod === 'oauth') {
+              headers.Authorization = `Bearer ${token.accessToken}`;
+            } else {
+              headers['PRIVATE-TOKEN'] = token.accessToken;
+            }
+          }
+        } catch {
+          // Proceed unauthenticated if token lookup fails
+        }
+      }
+
+      const res = await this.fetchFn(parsedUrl.toString(), { headers });
+      if (!res.ok) {
+        this.avatarCache.set(cacheKey, null);
+        return null;
+      }
+
+      const contentType = res.headers.get('content-type')?.split(';')[0]?.trim() || 'image/png';
+      if (!contentType.startsWith('image/')) {
+        this.avatarCache.set(cacheKey, null);
+        return null;
+      }
+
+      const arrayBuf = await res.arrayBuffer();
+      if (arrayBuf.byteLength === 0 || arrayBuf.byteLength > 2 * 1024 * 1024) {
+        this.avatarCache.set(cacheKey, null);
+        return null;
+      }
+
+      const dataUrl = `data:${contentType};base64,${Buffer.from(arrayBuf).toString('base64')}`;
+      this.avatarCache.set(cacheKey, dataUrl);
+      return dataUrl;
+    } catch {
+      this.avatarCache.set(cacheKey, null);
+      return null;
+    }
   }
 }

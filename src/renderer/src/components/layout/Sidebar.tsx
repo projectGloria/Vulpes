@@ -1,5 +1,6 @@
 import { useMemo, useState } from 'react';
-import { Download, FolderGit2, FolderPlus, Plus, Trash2 } from 'lucide-react';
+import { Download, FolderPlus, Plus, Search, Trash2 } from 'lucide-react';
+import { Avatar } from '@renderer/components/common/Avatar';
 import { t } from '@renderer/i18n';
 import { useAppStore } from '@renderer/store/useAppStore';
 
@@ -16,7 +17,10 @@ export function Sidebar(): React.JSX.Element {
     const q = filter.trim().toLowerCase();
     if (!q) return repositories;
     return repositories.filter(
-      (r) => r.name.toLowerCase().includes(q) || r.path.toLowerCase().includes(q)
+      (r) =>
+        r.name.toLowerCase().includes(q) ||
+        r.path.toLowerCase().includes(q) ||
+        (r.gitlabProjectPath?.toLowerCase().includes(q) ?? false)
     );
   }, [repositories, filter]);
 
@@ -33,7 +37,7 @@ export function Sidebar(): React.JSX.Element {
               aria-label="Clone Repository"
               onClick={() => setActiveDialog('clone-repo')}
             >
-              <Download size={15} />
+              <Download size={14} />
             </button>
             <button
               type="button"
@@ -42,7 +46,7 @@ export function Sidebar(): React.JSX.Element {
               aria-label={t('sidebar.addLocal')}
               onClick={() => setActiveDialog('add-repo')}
             >
-              <FolderPlus size={15} />
+              <FolderPlus size={14} />
             </button>
             <button
               type="button"
@@ -51,23 +55,26 @@ export function Sidebar(): React.JSX.Element {
               aria-label={t('sidebar.createNew')}
               onClick={() => setActiveDialog('create-repo')}
             >
-              <Plus size={15} />
+              <Plus size={14} />
             </button>
           </div>
         </div>
-        <input
-          type="search"
-          className="search-input"
-          placeholder={t('sidebar.filterPlaceholder')}
-          value={filter}
-          onChange={(e) => setFilter(e.target.value)}
-          aria-label={t('sidebar.filterPlaceholder')}
-        />
+        <div className="search-field">
+          <Search size={13} className="search-field-icon" />
+          <input
+            type="search"
+            className="search-input"
+            placeholder={t('sidebar.filterPlaceholder')}
+            value={filter}
+            onChange={(e) => setFilter(e.target.value)}
+            aria-label={t('sidebar.filterPlaceholder')}
+          />
+        </div>
       </div>
 
       <div className="repo-list" role="listbox" aria-label={t('sidebar.repositories')}>
         {filteredRepos.length === 0 ? (
-          <div style={{ padding: '16px 10px', color: 'var(--text-muted)', fontSize: 12 }}>
+          <div className="sidebar-empty">
             {t('sidebar.empty')}
           </div>
         ) : (
@@ -88,11 +95,17 @@ export function Sidebar(): React.JSX.Element {
                 }}
                 tabIndex={0}
               >
-                <FolderGit2 size={16} style={{ flexShrink: 0, color: 'var(--text-secondary)' }} />
+                <Avatar
+                  src={repo.avatarUrl}
+                  accountId={repo.accountId}
+                  name={repo.name}
+                  size={28}
+                  shape="rounded"
+                />
                 <div className="repo-row-main">
                   <div className="repo-name">{repo.name}</div>
                   <div className="repo-path" title={repo.path}>
-                    {repo.path}
+                    {repo.gitlabProjectPath ?? repo.path}
                   </div>
                 </div>
                 <button

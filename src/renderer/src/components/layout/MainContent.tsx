@@ -10,6 +10,7 @@ import {
   Settings,
   X
 } from 'lucide-react';
+import vulpesLogo from '@renderer/assets/vulpes.png';
 import { t } from '@renderer/i18n';
 import { useAppStore } from '@renderer/store/useAppStore';
 import { ChangesView } from '../changes/ChangesView';
@@ -34,7 +35,8 @@ export function MainContent(): React.JSX.Element {
   if (!activeRepo) {
     return (
       <main className="main-area">
-        <div className="empty-state">
+        <div className="empty-state welcome-hero">
+          <img src={vulpesLogo} alt="Vulpes" className="welcome-logo" draggable={false} />
           <h2>{t('welcome.title')}</h2>
           <p>{t('welcome.subtitle')}</p>
           <div className="btn-row">

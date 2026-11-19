@@ -570,33 +570,44 @@ export class GitService {
     return origin ? origin.fetchUrl || origin.pushUrl : null;
   }
 
-  public async fetch(repoPath: string, signal?: AbortSignal): Promise<void> {
+  public async fetch(
+    repoPath: string,
+    signal?: AbortSignal,
+    onProgress?: (progress: { stage: string; percent: number | null; raw: string }) => void
+  ): Promise<void> {
     const remoteUrl = await this.getOriginUrl(repoPath);
-    await this.runAuthenticatedGit(['fetch', '--prune', '--all'], remoteUrl, {
+    await this.runAuthenticatedGit(['fetch', '--prune', '--all', '--progress'], remoteUrl, {
       cwd: repoPath,
-      signal
+      signal,
+      onStderrLine: onProgress ? (line) => onProgress(parseGitProgress(line, 'Fetching')) : undefined
     });
   }
 
   public async pull(
     repoPath: string,
     strategy: PullStrategy = 'merge',
-    signal?: AbortSignal
+    signal?: AbortSignal,
+    onProgress?: (progress: { stage: string; percent: number | null; raw: string }) => void
   ): Promise<void> {
     const remoteUrl = await this.getOriginUrl(repoPath);
-    const args = ['pull'];
+    const args = ['pull', '--progress'];
     if (strategy === 'rebase') args.push('--rebase');
     else if (strategy === 'ff-only') args.push('--ff-only');
-    await this.runAuthenticatedGit(args, remoteUrl, { cwd: repoPath, signal });
+    await this.runAuthenticatedGit(args, remoteUrl, {
+      cwd: repoPath,
+      signal,
+      onStderrLine: onProgress ? (line) => onProgress(parseGitProgress(line, 'Pulling')) : undefined
+    });
   }
 
   public async push(
     repoPath: string,
     options: { publish?: boolean; branch?: string } = {},
-    signal?: AbortSignal
+    signal?: AbortSignal,
+    onProgress?: (progress: { stage: string; percent: number | null; raw: string }) => void
   ): Promise<{ publishedNewBranch: boolean; branchName: string | null }> {
     const remoteUrl = await this.getOriginUrl(repoPath);
-    const args = ['push'];
+    const args = ['push', '--progress'];
     let branchName = options.branch ?? null;
     if (options.publish) {
       if (!branchName) {
@@ -605,7 +616,11 @@ export class GitService {
       }
       args.push('-u', 'origin', branchName);
     }
-    await this.runAuthenticatedGit(args, remoteUrl, { cwd: repoPath, signal });
+    await this.runAuthenticatedGit(args, remoteUrl, {
+      cwd: repoPath,
+      signal,
+      onStderrLine: onProgress ? (line) => onProgress(parseGitProgress(line, 'Pushing')) : undefined
+    });
     return { publishedNewBranch: Boolean(options.publish), branchName };
   }
 
@@ -697,6 +712,20 @@ export class GitService {
       await runGit(['merge', '--abort'], { cwd: repoPath });
     }
   }
+}
+
+function parseGitProgress(
+  line: string,
+  fallbackStage: string
+): { stage: string; percent: number | null; raw: string } {
+  const cleaned = line.replace(/^remote:\s*/i, '').trim();
+  const pctMatch = /(\d+)%/.exec(cleaned);
+  const stageMatch = /^([^:]+):/.exec(cleaned);
+  return {
+    stage: stageMatch ? stageMatch[1].trim() : fallbackStage,
+    percent: pctMatch ? Math.min(100, Math.max(0, Number.parseInt(pctMatch[1], 10))) : null,
+    raw: cleaned
+  };
 }
 
 function imageMime(ext: string): string {

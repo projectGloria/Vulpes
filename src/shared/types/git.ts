@@ -15,6 +15,18 @@ export interface RepositoryRecord {
   gitlabProjectId?: number;
   gitlabProjectPath?: string;
   accountId?: string;
+  avatarUrl?: string | null;
+}
+
+export type GitOperationKind = 'fetch' | 'pull' | 'push' | 'commit' | 'clone';
+
+export interface GitProgressEvent {
+  operation: GitOperationKind;
+  repoPath: string;
+  stage: string;
+  percent: number | null;
+  status: 'running' | 'done' | 'error';
+  message?: string;
 }
 
 export type FileChangeKind =

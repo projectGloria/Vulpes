@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import { Globe, KeyRound, LogOut, ShieldCheck, X } from 'lucide-react';
+import { Avatar } from '@renderer/components/common/Avatar';
 import { useAppStore } from '@renderer/store/useAppStore';
 
 export function AccountsDialog(): React.JSX.Element | null {
@@ -84,21 +85,26 @@ export function AccountsDialog(): React.JSX.Element | null {
               {accounts.map((acc) => (
                 <div
                   key={acc.id}
-                  style={{
-                    display: 'flex',
-                    alignItems: 'center',
-                    justifyContent: 'space-between',
-                    padding: '8px 10px',
-                    border: '1px solid var(--border-subtle)',
-                    borderRadius: 6
-                  }}
+                  className="account-card"
                 >
-                  <div>
-                    <div style={{ fontWeight: 600 }}>
-                      {acc.name} <span style={{ color: 'var(--text-muted)' }}>@{acc.username}</span>
-                    </div>
-                    <div style={{ fontSize: 11, color: 'var(--text-muted)' }}>
-                      {acc.instanceUrl} · {acc.authMethod === 'oauth' ? 'OAuth 2.0' : 'PAT'}
+                  <div className="account-card-left">
+                    <Avatar
+                      src={acc.avatarUrl}
+                      accountId={acc.id}
+                      name={acc.name || acc.username}
+                      size={36}
+                      shape="circle"
+                    />
+                    <div>
+                      <div style={{ fontWeight: 600 }}>
+                        {acc.name}{' '}
+                        <span style={{ color: 'var(--text-muted)', fontWeight: 400 }}>
+                          @{acc.username}
+                        </span>
+                      </div>
+                      <div style={{ fontSize: 11, color: 'var(--text-muted)' }}>
+                        {acc.instanceUrl} · {acc.authMethod === 'oauth' ? 'OAuth 2.0' : 'PAT'}
+                      </div>
                     </div>
                   </div>
                   <button

@@ -41,6 +41,7 @@ export interface GitLabProject {
   http_url_to_repo: string;
   ssh_url_to_repo: string;
   web_url: string;
+  avatar_url?: string | null;
   visibility: 'private' | 'internal' | 'public';
   last_activity_at: string;
   namespace: {
@@ -48,6 +49,7 @@ export interface GitLabProject {
     name: string;
     full_path: string;
     kind: string;
+    avatar_url?: string | null;
   };
 }
 

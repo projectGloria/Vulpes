@@ -14,6 +14,10 @@ const ALLOWED_INVOKE_CHANNELS = new Set<IpcChannel>([
   'app:pickDirectory',
   'app:getPreferences',
   'app:updatePreferences',
+  'window:minimize',
+  'window:maximizeToggle',
+  'window:close',
+  'window:isMaximized',
   'git:checkInstall',
   'git:getStatus',
   'repo:list',
@@ -26,6 +30,8 @@ const ALLOWED_INVOKE_CHANNELS = new Set<IpcChannel>([
   'auth:signInOAuth',
   'auth:signOut',
   'auth:verifyAccount',
+  'auth:refreshProfile',
+  'gitlab:fetchAvatar',
   'gitlab:listProjects',
   'repo:clone',
   'repo:cancelOperation',
@@ -75,7 +81,12 @@ const ALLOWED_INVOKE_CHANNELS = new Set<IpcChannel>([
   'gitlab:listIssues'
 ]);
 
-const ALLOWED_EVENT_CHANNELS = new Set<IpcEventChannel>(['repo:changed', 'repo:cloneProgress']);
+const ALLOWED_EVENT_CHANNELS = new Set<IpcEventChannel>([
+  'repo:changed',
+  'repo:cloneProgress',
+  'git:progress',
+  'window:maximizedChanged'
+]);
 
 const api = {
   invoke<C extends IpcChannel>(

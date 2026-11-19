@@ -169,6 +169,17 @@ export class AppStore {
     this.save();
   }
 
+  public updateAccountProfile(
+    accountId: string,
+    patch: Partial<Pick<GitLabAccount, 'name' | 'username' | 'email' | 'avatarUrl'>>
+  ): GitLabAccount | null {
+    const account = this.state.accounts.find((a) => a.id === accountId);
+    if (!account) return null;
+    Object.assign(account, patch);
+    this.save();
+    return { ...account };
+  }
+
   public removeAccount(id: string): void {
     this.state.accounts = this.state.accounts.filter((a) => a.id !== id);
     this.save();
@@ -176,7 +187,12 @@ export class AppStore {
 
   public updateRepositoryMetadata(
     id: string,
-    patch: Partial<Pick<RepositoryRecord, 'gitlabInstanceUrl' | 'gitlabProjectId' | 'gitlabProjectPath' | 'accountId'>>
+    patch: Partial<
+      Pick<
+        RepositoryRecord,
+        'gitlabInstanceUrl' | 'gitlabProjectId' | 'gitlabProjectPath' | 'accountId' | 'avatarUrl'
+      >
+    >
   ): RepositoryRecord | null {
     const repo = this.state.repositories.find((r) => r.id === id);
     if (!repo) return null;

@@ -93,7 +93,13 @@ export const cloneRepoSchema = z.object({
   accountId: z.string().optional(),
   gitlabProjectId: z.number().int().positive().optional(),
   gitlabProjectPath: z.string().optional(),
-  gitlabInstanceUrl: z.string().optional()
+  gitlabInstanceUrl: z.string().optional(),
+  avatarUrl: z.string().nullable().optional()
+});
+
+export const fetchAvatarSchema = z.object({
+  url: z.string().trim().min(1).max(2048),
+  accountId: z.string().optional()
 });
 
 export const cancelOperationSchema = z.object({

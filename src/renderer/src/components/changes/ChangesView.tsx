@@ -5,19 +5,36 @@ import {
   ExternalLink,
   RotateCcw,
   Trash2,
-  Undo2
+  Undo2,
+  UserPlus
 } from 'lucide-react';
 import type { FileChange, FileDiff } from '@shared/types/git';
+import { Avatar } from '@renderer/components/common/Avatar';
 import { useAppStore } from '@renderer/store/useAppStore';
 import { DiffViewer } from './DiffViewer';
+
+function splitFilePath(fullPath: string): { dir: string; name: string } {
+  const normalized = fullPath.replace(/\\/g, '/');
+  const idx = normalized.lastIndexOf('/');
+  if (idx < 0) return { dir: '', name: normalized };
+  return {
+    dir: normalized.slice(0, idx + 1),
+    name: normalized.slice(idx + 1)
+  };
+}
 
 export function ChangesView(): React.JSX.Element {
   const repositories = useAppStore((s) => s.repositories);
   const activeRepoId = useAppStore((s) => s.activeRepoId);
   const repoStatus = useAppStore((s) => s.repoStatus);
+  const accounts = useAppStore((s) => s.accounts);
   const refreshStatus = useAppStore((s) => s.refreshStatus);
 
   const activeRepo = repositories.find((r) => r.id === activeRepoId) ?? null;
+  const primaryAccount =
+    (activeRepo?.accountId ? accounts.find((a) => a.id === activeRepo.accountId) : null) ??
+    accounts[0] ??
+    null;
   const files = repoStatus?.files ?? [];
 
   const [selectedFile, setSelectedFile] = useState<string | null>(null);
@@ -28,6 +45,7 @@ export function ChangesView(): React.JSX.Element {
   const [summary, setSummary] = useState('');
   const [description, setDescription] = useState('');
   const [coAuthorsText, setCoAuthorsText] = useState('');
+  const [showCoAuthors, setShowCoAuthors] = useState(false);
   const [amend, setAmend] = useState(false);
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
@@ -74,6 +92,9 @@ export function ChangesView(): React.JSX.Element {
 
   const stagedCount = files.filter((f) => f.staged).length;
   const allStaged = files.length > 0 && files.every((f) => f.staged);
+  const summaryLen = summary.trim().length;
+  const summaryCounterClass =
+    summaryLen > 72 ? 'counter-danger' : summaryLen > 50 ? 'counter-warn' : '';
 
   const handleToggleStage = async (file: FileChange): Promise<void> => {
     setError(null);
@@ -88,7 +109,7 @@ export function ChangesView(): React.JSX.Element {
         filePath: file.path
       });
     }
-    await refreshStatus();
+    await refreshStatus(true);
   };
 
   const handleToggleAll = async (): Promise<void> => {
@@ -97,7 +118,7 @@ export function ChangesView(): React.JSX.Element {
     } else {
       await window.gitlabDesktop.invoke('git:stageAll', { repoPath: activeRepo.path });
     }
-    await refreshStatus();
+    await refreshStatus(true);
   };
 
   const handleDiscard = async (file: FileChange): Promise<void> => {
@@ -113,17 +134,17 @@ export function ChangesView(): React.JSX.Element {
     if (res.ok) {
       setMessage(
         res.data
-          ? `Discarded ${file.path} (backup saved to ${res.data.backupPath})`
+          ? `Discarded ${file.path} (backup saved)`
           : `Discarded ${file.path}`
       );
-      await refreshStatus();
+      await refreshStatus(true);
     } else {
       setError(res.error.message);
     }
   };
 
-  const handleCommit = async (e: React.FormEvent): Promise<void> => {
-    e.preventDefault();
+  const submitCommit = async (): Promise<void> => {
+    if (busy || (files.length === 0 && !amend) || repoStatus.hasConflicts) return;
     if (!summary.trim()) {
       setError('Commit summary is required.');
       return;
@@ -132,7 +153,6 @@ export function ChangesView(): React.JSX.Element {
     setError(null);
     setMessage(null);
 
-    // If nothing is staged yet, stage all (GitHub Desktop default ergonomics)
     if (stagedCount === 0 && !amend && files.length > 0) {
       await window.gitlabDesktop.invoke('git:stageAll', { repoPath: activeRepo.path });
     }
@@ -142,7 +162,6 @@ export function ChangesView(): React.JSX.Element {
       .map((s) => s.trim())
       .filter(Boolean);
 
-    // Auto-reference linked GitLab issue when branch starts with "<issueId>-"
     const issueMatch = /^(\d+)-/.exec(repoStatus.branch.name);
     let finalDescription = description.trim();
     if (issueMatch && !finalDescription.includes(`#${issueMatch[1]}`) && !summary.includes(`#${issueMatch[1]}`)) {
@@ -168,9 +187,22 @@ export function ChangesView(): React.JSX.Element {
     setSummary('');
     setDescription('');
     setCoAuthorsText('');
+    setShowCoAuthors(false);
     setAmend(false);
     setMessage('Commit created.');
-    await refreshStatus();
+    await refreshStatus(true);
+  };
+
+  const handleCommit = async (e: React.FormEvent): Promise<void> => {
+    e.preventDefault();
+    await submitCommit();
+  };
+
+  const handleComposerKeyDown = (e: React.KeyboardEvent): void => {
+    if ((e.ctrlKey || e.metaKey) && e.key === 'Enter') {
+      e.preventDefault();
+      void submitCommit();
+    }
   };
 
   const handleUndoLastCommit = async (): Promise<void> => {
@@ -184,7 +216,7 @@ export function ChangesView(): React.JSX.Element {
     setSummary(res.data.summary);
     setDescription(res.data.body);
     setMessage('Undid last commit (changes kept staged).');
-    await refreshStatus();
+    await refreshStatus(true);
   };
 
   const handleResolveConflict = async (
@@ -197,7 +229,7 @@ export function ChangesView(): React.JSX.Element {
       strategy
     });
     if (!res.ok) setError(res.error.message);
-    await refreshStatus();
+    await refreshStatus(true);
   };
 
   const conflictMode: 'merge' | 'rebase' | null = repoStatus.isRebasing
@@ -210,7 +242,7 @@ export function ChangesView(): React.JSX.Element {
     <div className="split-pane">
       <div className="changes-left">
         <div className="changes-list-header">
-          <label className="checkbox-row" style={{ fontWeight: 600, fontSize: 12 }}>
+          <label className="checkbox-row changes-count-label">
             <input
               type="checkbox"
               checked={allStaged}
@@ -221,19 +253,19 @@ export function ChangesView(): React.JSX.Element {
               {files.length} changed {files.length === 1 ? 'file' : 'files'}
             </span>
           </label>
-          <span style={{ fontSize: 11, color: 'var(--text-muted)' }}>
-            {stagedCount} staged
-          </span>
+          <span className="staged-pill">{stagedCount} staged</span>
         </div>
 
         <div className="changes-file-scroll">
           {files.length === 0 ? (
-            <div style={{ padding: 20, color: 'var(--text-muted)', textAlign: 'center' }}>
-              Working tree clean
+            <div className="changes-clean-state">
+              <div className="changes-clean-title">Working tree clean</div>
+              <div className="changes-clean-sub">No uncommitted changes in this repository.</div>
             </div>
           ) : (
             files.map((file) => {
               const isSelected = file.path === selectedFile;
+              const { dir, name } = splitFilePath(file.path);
               return (
                 <div
                   key={file.path}
@@ -248,12 +280,13 @@ export function ChangesView(): React.JSX.Element {
                     aria-label={`Stage ${file.path}`}
                   />
                   <span className="change-path" title={file.path}>
-                    {file.path}
+                    {dir && <span className="change-path-dir">{dir}</span>}
+                    <span className="change-path-name">{name}</span>
                   </span>
                   <span className={`status-pill ${file.kind}`}>{file.kind[0].toUpperCase()}</span>
                   <button
                     type="button"
-                    className="icon-btn"
+                    className="icon-btn change-discard-btn"
                     title="Discard changes"
                     aria-label={`Discard ${file.path}`}
                     onClick={(e) => {
@@ -270,60 +303,107 @@ export function ChangesView(): React.JSX.Element {
         </div>
 
         <form className="commit-box" onSubmit={(e) => void handleCommit(e)}>
-          <input
-            type="text"
-            className="text-input"
-            placeholder="Summary (required)"
-            value={summary}
-            onChange={(e) => setSummary(e.target.value)}
-            aria-label="Commit summary"
-          />
-          <textarea
-            className="text-input"
-            rows={3}
-            placeholder="Description (optional)"
-            value={description}
-            onChange={(e) => setDescription(e.target.value)}
-            style={{ resize: 'vertical' }}
-            aria-label="Commit description"
-          />
-          <input
-            type="text"
-            className="text-input"
-            placeholder="Co-author: Name <email@example.com>"
-            value={coAuthorsText}
-            onChange={(e) => setCoAuthorsText(e.target.value)}
-            aria-label="Co-authors"
-          />
-          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-            <label className="checkbox-row" style={{ fontSize: 12 }}>
+          <div className="commit-composer-card">
+            <div className="commit-summary-row">
+              {primaryAccount && (
+                <Avatar
+                  src={primaryAccount.avatarUrl}
+                  accountId={primaryAccount.id}
+                  name={primaryAccount.name || primaryAccount.username}
+                  size={24}
+                  shape="circle"
+                />
+              )}
+              <input
+                type="text"
+                className="commit-summary-input"
+                placeholder="Summary (required)"
+                value={summary}
+                onChange={(e) => {
+                  setSummary(e.target.value);
+                  if (error) setError(null);
+                }}
+                onKeyDown={handleComposerKeyDown}
+                aria-label="Commit summary"
+              />
+              {summaryLen > 0 && (
+                <span className={`commit-char-counter ${summaryCounterClass}`}>
+                  {summaryLen}
+                </span>
+              )}
+            </div>
+            <div className="commit-composer-divider" />
+            <textarea
+              className="commit-desc-input"
+              rows={3}
+              placeholder="Description (optional)"
+              value={description}
+              onChange={(e) => setDescription(e.target.value)}
+              onKeyDown={handleComposerKeyDown}
+              aria-label="Commit description"
+            />
+            {showCoAuthors && (
+              <>
+                <div className="commit-composer-divider" />
+                <input
+                  type="text"
+                  className="commit-coauthor-input"
+                  placeholder="Co-author: Name <email@example.com>"
+                  value={coAuthorsText}
+                  onChange={(e) => setCoAuthorsText(e.target.value)}
+                  onKeyDown={handleComposerKeyDown}
+                  aria-label="Co-authors"
+                />
+              </>
+            )}
+          </div>
+
+          <div className="commit-options-row">
+            <label className="checkbox-row commit-amend-label">
               <input
                 type="checkbox"
                 checked={amend}
                 onChange={(e) => setAmend(e.target.checked)}
               />
-              <span>Amend last commit</span>
+              <span>Amend</span>
             </label>
-            <button
-              type="button"
-              className="btn-xs"
-              onClick={() => void handleUndoLastCommit()}
-              disabled={repoStatus.branch.unborn}
-              title="Soft reset HEAD~1 and keep changes staged"
-            >
-              <Undo2 size={12} /> Undo last
-            </button>
+            <div className="commit-options-actions">
+              <button
+                type="button"
+                className={`btn-ghost-xs${showCoAuthors ? ' active' : ''}`}
+                onClick={() => setShowCoAuthors((v) => !v)}
+                title="Add co-authors"
+              >
+                <UserPlus size={12} /> Co-authors
+              </button>
+              <button
+                type="button"
+                className="btn-ghost-xs"
+                onClick={() => void handleUndoLastCommit()}
+                disabled={repoStatus.branch.unborn}
+                title="Soft reset HEAD~1 and keep changes staged"
+              >
+                <Undo2 size={12} /> Undo
+              </button>
+            </div>
           </div>
+
           {error && <div className="error-inline">{error}</div>}
-          {message && <div style={{ fontSize: 11, color: 'var(--success)' }}>{message}</div>}
+          {message && <div className="success-inline">{message}</div>}
+
           <button
             type="submit"
-            className="btn btn-primary"
-            style={{ justifyContent: 'center' }}
+            className="btn btn-primary commit-submit-btn"
             disabled={busy || (files.length === 0 && !amend) || repoStatus.hasConflicts}
           >
             <Check size={14} />
-            {amend ? 'Amend commit' : `Commit to ${repoStatus.branch.name}`}
+            <span>
+              {busy
+                ? 'Committing...'
+                : amend
+                  ? 'Amend last commit'
+                  : `Commit to ${repoStatus.branch.name}`}
+            </span>
           </button>
         </form>
       </div>
@@ -386,7 +466,7 @@ export function ChangesView(): React.JSX.Element {
                       mode: conflictMode
                     });
                     if (!res.ok) setError(res.error.message);
-                    await refreshStatus();
+                    await refreshStatus(true);
                   }}
                 >
                   Continue {conflictMode}
@@ -402,7 +482,7 @@ export function ChangesView(): React.JSX.Element {
                       repoPath: activeRepo.path,
                       mode: conflictMode
                     });
-                    await refreshStatus();
+                    await refreshStatus(true);
                   }}
                 >
                   <RotateCcw size={12} /> Abort {conflictMode}
@@ -448,7 +528,7 @@ export function ChangesView(): React.JSX.Element {
               setError(res.error.message);
               return;
             }
-            await refreshStatus();
+            await refreshStatus(true);
           }}
         />
       </div>

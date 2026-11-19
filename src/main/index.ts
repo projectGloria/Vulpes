@@ -1,3 +1,4 @@
+import fs from 'fs';
 import path from 'path';
 import { app, BrowserWindow, Menu, safeStorage, session, shell } from 'electron';
 import { isSafeExternalUrl, parseGitRemoteUrl } from '@shared/utils/url';
@@ -15,15 +16,38 @@ import { setupAutoUpdater } from './services/updater/AutoUpdater';
 let mainWindow: BrowserWindow | null = null;
 let repoWatcher: RepoWatcher | null = null;
 
+function resolveAppIconPath(): string | undefined {
+  const iconFile = process.platform === 'win32' ? 'Vulpes.ico' : 'Vulpes.png';
+  const candidates = [
+    path.join(app.getAppPath(), iconFile),
+    path.join(process.cwd(), iconFile),
+    path.join(process.resourcesPath, iconFile),
+    path.join(__dirname, '../../', iconFile)
+  ];
+  for (const candidate of candidates) {
+    if (fs.existsSync(candidate)) {
+      return candidate;
+    }
+  }
+  return undefined;
+}
+
 function createMainWindow(logger: Logger): BrowserWindow {
+  const isMac = process.platform === 'darwin';
+  const iconPath = resolveAppIconPath();
+
   const win = new BrowserWindow({
-    width: 1280,
-    height: 820,
-    minWidth: 920,
-    minHeight: 600,
+    width: 1320,
+    height: 840,
+    minWidth: 960,
+    minHeight: 620,
     show: false,
-    title: 'GitLab Desktop',
-    backgroundColor: '#16171a',
+    title: 'Vulpes',
+    icon: iconPath,
+    frame: false,
+    ...(isMac ? { titleBarStyle: 'hiddenInset' as const } : {}),
+    autoHideMenuBar: true,
+    backgroundColor: '#0b0e14',
     webPreferences: {
       preload: path.join(__dirname, '../preload/index.js'),
       contextIsolation: true,
@@ -33,8 +57,30 @@ function createMainWindow(logger: Logger): BrowserWindow {
     }
   });
 
-  win.once('ready-to-show', () => {
-    win.show();
+  const revealWindow = (): void => {
+    if (!win.isDestroyed() && !win.isVisible()) {
+      win.show();
+      win.focus();
+    }
+  };
+
+  win.once('ready-to-show', revealWindow);
+  win.webContents.once('did-finish-load', revealWindow);
+  win.webContents.on('did-fail-load', (_event, errorCode, errorDescription, validatedURL) => {
+    logger.error('window', 'Failed to load renderer', { errorCode, errorDescription, validatedURL });
+    revealWindow();
+  });
+
+  win.on('maximize', () => {
+    if (!win.isDestroyed()) {
+      win.webContents.send('window:maximizedChanged', { maximized: true });
+    }
+  });
+
+  win.on('unmaximize', () => {
+    if (!win.isDestroyed()) {
+      win.webContents.send('window:maximizedChanged', { maximized: false });
+    }
   });
 
   win.webContents.setWindowOpenHandler(({ url }) => {
@@ -79,9 +125,14 @@ function applyContentSecurityPolicy(): void {
   });
 }
 
+app.setName('Vulpes');
+if (process.platform === 'win32') {
+  app.setAppUserModelId('dev.vulpes.app');
+}
+
 app.whenReady().then(() => {
-  if (!app.isDefaultProtocolClient('gitlab-desktop')) {
-    app.setAsDefaultProtocolClient('gitlab-desktop');
+  if (!app.isDefaultProtocolClient('vulpes')) {
+    app.setAsDefaultProtocolClient('vulpes');
   }
 
   const userDataDir = app.getPath('userData');
@@ -113,13 +164,17 @@ app.whenReady().then(() => {
   }, discardBackupStore);
   repoWatcher = new RepoWatcher();
 
-  logger.info('app', 'Starting GitLab Desktop', {
+  logger.info('app', 'Starting Vulpes', {
     version: app.getVersion(),
     platform: process.platform
   });
 
   applyContentSecurityPolicy();
-  Menu.setApplicationMenu(buildApplicationMenu(logger));
+  if (process.platform === 'darwin') {
+    Menu.setApplicationMenu(buildApplicationMenu(logger));
+  } else {
+    Menu.setApplicationMenu(null);
+  }
 
   registerIpcHandlers({
     gitService,
