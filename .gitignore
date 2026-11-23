@@ -10,3 +10,4 @@ Thumbs.db
 *.log
 .env
 .env.local
+[Dd]esktop.ini
